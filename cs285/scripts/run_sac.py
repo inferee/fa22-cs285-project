@@ -47,7 +47,7 @@ class SAC_Trainer(object):
         ## RL TRAINER
         ################
 
-        self.rl_trainers = dict()
+        self.rl_trainers = []
         for env_task in params['env_tasks']:
             trainer_params = copy.deepcopy(self.params)
             trainer_params['env_task'] = env_task
@@ -56,7 +56,7 @@ class SAC_Trainer(object):
             if not(os.path.exists(logdir)):
                 os.makedirs(logdir)
             trainer_params['logdir'] = logdir
-            self.rl_trainers[env_task] = RL_Trainer(trainer_params)
+            self.rl_trainers.append(RL_Trainer(trainer_params))
 
     def run_training_loop(self):
         for i in range(self.params['n_iter']):
@@ -64,8 +64,8 @@ class SAC_Trainer(object):
             for rl_trainer in self.rl_trainers:
                 data.append(rl_trainer.run_sac_training_loop(
                     i, 
-                    collect_policy = self.rl_trainer.agent.actor,
-                    eval_policy = self.rl_trainer.agent.actor,
+                    collect_policy = rl_trainer.agent.actor,
+                    eval_policy = rl_trainer.agent.actor,
                     ))
 
             if self.params['multitask_setting'] == 'all':
