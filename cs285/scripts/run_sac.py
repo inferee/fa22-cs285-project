@@ -51,6 +51,11 @@ class SAC_Trainer(object):
         for env_task in params['env_tasks']:
             trainer_params = copy.deepcopy(self.params)
             trainer_params['env_task'] = env_task
+            logdir = self.params['exp_name'] + '_' + self.params['env_name'] + '_' + env_task + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+            logdir = os.path.join(self.params['data_path'], logdir)
+            if not(os.path.exists(logdir)):
+                os.makedirs(logdir)
+            trainer_params['logdir'] = logdir
             self.rl_trainers[env_task] = RL_Trainer(trainer_params)
 
     def run_training_loop(self):
@@ -65,7 +70,6 @@ class SAC_Trainer(object):
 
             if self.params['multitask_setting'] == 'all':
                 for j, k in itertools.permutations(len(self.rl_trainers), 2):
-                    # TODO: NEED TO RELABEL REWARDS
                     relabeled_data = self.rl_trainers[j].relabel_rewards(data[k])
                     self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
 
@@ -114,17 +118,9 @@ def main():
     ##################################
 
     data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../data')
-
+    params['data_path'] = data_path
     if not (os.path.exists(data_path)):
         os.makedirs(data_path)
-
-    logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
-    logdir = os.path.join(data_path, logdir)
-    params['logdir'] = logdir
-    if not(os.path.exists(logdir)):
-        os.makedirs(logdir)
-
-    print("\n\n\nLOGGING TO: ", logdir, "\n\n\n")
 
     ###################
     ### RUN TRAINING
