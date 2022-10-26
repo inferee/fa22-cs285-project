@@ -6,6 +6,7 @@ import itertools
 from cs285.agents.sac_agent import SACAgent
 from cs285.infrastructure.rl_trainer import RL_Trainer
 
+from tqdm import trange
 
 class SAC_Trainer(object):
 
@@ -47,7 +48,7 @@ class SAC_Trainer(object):
         ## RL TRAINER
         ################
 
-        self.rl_trainers = []
+        self.rl_trainers = dict()
         for env_task in params['env_tasks']:
             trainer_params = copy.deepcopy(self.params)
             trainer_params['env_task'] = env_task
@@ -56,20 +57,21 @@ class SAC_Trainer(object):
             if not(os.path.exists(logdir)):
                 os.makedirs(logdir)
             trainer_params['logdir'] = logdir
-            self.rl_trainers.append(RL_Trainer(trainer_params))
+            self.rl_trainers[env_task] = RL_Trainer(trainer_params)
 
     def run_training_loop(self):
-        for i in range(self.params['n_iter']):
-            data = []
-            for rl_trainer in self.rl_trainers:
-                data.append(rl_trainer.run_sac_training_loop(
-                    i, 
-                    collect_policy = rl_trainer.agent.actor,
-                    eval_policy = rl_trainer.agent.actor,
-                    ))
+        training_loops = {
+            env_task: rl_trainer.run_sac_training_loop(
+                collect_policy = rl_trainer.agent.actor,
+                eval_policy = rl_trainer.agent.actor,
+            ) for env_task, rl_trainer in self.rl_trainers.items()
+        }
+
+        for i in trange(self.params['n_iter']):
+            data = {env_task: next(loop) for env_task, loop in training_loops.items()}
 
             if self.params['multitask_setting'] == 'all':
-                for j, k in itertools.permutations(len(self.rl_trainers), 2):
+                for j, k in itertools.permutations(self.rl_trainers.keys(), 2):
                     relabeled_data = self.rl_trainers[j].relabel_rewards(data[k])
                     self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
 
@@ -78,7 +80,7 @@ def main():
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='Walker2d-v3')
+    parser.add_argument('--env_name', type=str, default='Walker2d-v4')
     parser.add_argument('--env_tasks', type=str, nargs='+', default='forward')
     parser.add_argument('--multitask_setting', type=str, default='none')
     parser.add_argument('--ep_len', type=int, default=200)

@@ -5,7 +5,6 @@ import os
 import sys
 import time
 import copy
-from tqdm import trange
 from cs285.infrastructure.atari_wrappers import ReturnWrapper
 
 import gym
@@ -135,20 +134,23 @@ class RL_Trainer(object):
     def path_relabel_rewards(self, paths, mutate = False):
         if not mutate:
             paths = copy.deepcopy(paths)
-        if self.params['env_name'] == 'Walker2d-v3':
-            x_vel = paths['observation'][:,7]
-            ctrl_cost = 1e-3 * np.linalg.norm(paths['action'], axis=1) ** 2
-            if self.params['env_task'] == 'forward':
-                paths['reward'] = x_vel - ctrl_cost
-            elif self.params['env_task'] == 'backward':
-                paths['reward'] = -x_vel - ctrl_cost
-            elif self.params['env_task'] == 'jump':
-                paths['reward'] = np.abs(x_vel) - ctrl_cost + 10 * (paths['observation'][:,0] - 1.25)
+        if self.params['env_name'] == 'Walker2d-v4':
+            reward_fn = {
+                'forward': lambda x_vel, ctrl_cost, _: x_vel - ctrl_cost,
+                'backward': lambda x_vel, ctrl_cost, _: -x_vel - ctrl_cost,
+                'jump': lambda x_vel, ctrl_cost, z_pos: np.abs(x_vel) - ctrl_cost + 10 * (z_pos[0] - 1.25)
+            }[self.params['env_task']]
+
+            for path in paths:
+                x_vel = path['observation'][:, 7]
+                ctrl_cost = 1e-3 * np.linalg.norm(path['action'], axis=1) ** 2
+                z_pos = path['observation'][:, 0]
+                path['reward'] = reward_fn(x_vel, ctrl_cost, z_pos)
         return paths
 
-    def run_sac_training_iter(self, itr, collect_policy, eval_policy):
+    def run_sac_training_loop(self, collect_policy, eval_policy):
         """
-        :param itr:  number of (dagger) iterations
+        :param n_iter:  number of (dagger) iterations
         :param collect_policy:
         :param eval_policy:
         """
@@ -163,75 +165,78 @@ class RL_Trainer(object):
         done = False
         print_period = 1000
 
-        # if itr % print_period == 0:
-        #     print("\n\n********** Iteration %i ************"%itr)
+        itr = 0
 
-        # decide if videos should be rendered/logged at this iteration
-        if itr % self.params['video_log_freq'] == 0 and self.params['video_log_freq'] != -1:
-            self.logvideo = True
-        else:
-            self.logvideo = False
+        while True:
+            # if itr % print_period == 0:
+            #     print("\n\n********** Iteration %i ************"%itr)
 
-        # decide if metrics should be logged
-        if self.params['scalar_log_freq'] == -1:
-            self.logmetrics = False
-        elif itr % self.params['scalar_log_freq'] == 0:
-            self.logmetrics = True
-        else:
-            self.logmetrics = False
-
-        use_batchsize = self.params['batch_size']
-        if itr==0:
-            use_batchsize = self.params['batch_size_initial']
-            print("\nSampling seed steps for training...")
-            paths, envsteps_this_batch = utils.sample_random_trajectories(self.env, use_batchsize, self.params['ep_len'])
-            paths = self.relabel_rewards(paths, mutate = True)
-            train_video_paths = None
-            episode_stats['reward'].append(np.mean([np.sum(path['reward']) for path in paths]))
-            episode_stats['ep_len'].append(len(paths[0]['reward']))
-            self.total_envsteps += envsteps_this_batch
-        else:
-            if itr == 1 or done:
-                obs = self.env.reset()
-                episode_stats['reward'].append(episode_return)
-                episode_stats['ep_len'].append(episode_step)
-                episode_step = 0
-                episode_return = 0
-
-            action = self.agent.actor.get_action(obs)[0]
-            next_obs, rew, done, _ = self.env.step(action)
-
-            episode_return += self.relabel_rewards(obs, action, rew)
-
-            episode_step += 1
-            self.total_envsteps += 1
-
-            if done:
-                terminal = 1
+            # decide if videos should be rendered/logged at this iteration
+            if itr % self.params['video_log_freq'] == 0 and self.params['video_log_freq'] != -1:
+                self.logvideo = True
             else:
-                terminal = 0
-            paths = [Path([obs], [], [action], [rew], [next_obs], [terminal])]
-            obs = next_obs
+                self.logvideo = False
 
-        # add collected data to replay buffer
-        self.agent.add_to_replay_buffer(paths)
+            # decide if metrics should be logged
+            if self.params['scalar_log_freq'] == -1:
+                self.logmetrics = False
+            elif itr % self.params['scalar_log_freq'] == 0:
+                self.logmetrics = True
+            else:
+                self.logmetrics = False
 
-        # train agent (using sampled data from replay buffer)
-        # if itr % print_period == 0:
-        #     print("\nTraining agent...")
-        all_logs = self.train_agent()
+            use_batchsize = self.params['batch_size']
+            if itr==0:
+                use_batchsize = self.params['batch_size_initial']
+                print("\nSampling seed steps for training...")
+                paths, envsteps_this_batch = utils.sample_random_trajectories(self.env, use_batchsize, self.params['ep_len'])
+                paths = self.path_relabel_rewards(paths, mutate = True)
+                train_video_paths = None
+                episode_stats['reward'].append(np.mean([np.sum(path['reward']) for path in paths]))
+                episode_stats['ep_len'].append(len(paths[0]['reward']))
+                self.total_envsteps += envsteps_this_batch
+            else:
+                if itr == 1 or done:
+                    obs = self.env.reset()
+                    episode_stats['reward'].append(episode_return)
+                    episode_stats['ep_len'].append(episode_step)
+                    episode_step = 0
+                    episode_return = 0
 
-        # log/save
-        if self.logvideo or self.logmetrics:
-            # perform logging
-            print('\nBeginning logging procedure...')
-            self.perform_sac_logging(itr, episode_stats, eval_policy, train_video_paths, all_logs)
-            episode_stats = {'reward': [], 'ep_len': []}
-            if self.params['save_params']:
-                self.agent.save('{}/agent_itr_{}.pt'.format(self.params['logdir'], itr))
+                action = self.agent.actor.get_action(obs)[0]
+                next_obs, rew, done, _ = self.env.step(action)
 
-        return paths
+                episode_return += self.relabel_rewards(obs, action, rew)
 
+                episode_step += 1
+                self.total_envsteps += 1
+
+                if done:
+                    terminal = 1
+                else:
+                    terminal = 0
+                paths = [Path([obs], [], [action], [rew], [next_obs], [terminal])]
+                obs = next_obs
+
+            # add collected data to replay buffer
+            self.agent.add_to_replay_buffer(paths)
+
+            # train agent (using sampled data from replay buffer)
+            # if itr % print_period == 0:
+            #     print("\nTraining agent...")
+            all_logs = self.train_agent()
+
+            # log/save
+            if self.logvideo or self.logmetrics:
+                # perform logging
+                print('\nBeginning logging procedure...')
+                self.perform_sac_logging(itr, episode_stats, eval_policy, train_video_paths, all_logs)
+                episode_stats = {'reward': [], 'ep_len': []}
+                if self.params['save_params']:
+                    self.agent.save('{}/agent_itr_{}.pt'.format(self.params['logdir'], itr))
+
+            yield paths
+            itr += 1
 
     ####################################
     ####################################
@@ -252,7 +257,7 @@ class RL_Trainer(object):
         # collect `batch_size` samples to be used for training
         # print("\nCollecting data to be used for training...")
         paths, envsteps_this_batch = utils.sample_trajectories(self.env, collect_policy, num_transitions_to_sample, self.params['ep_len'])
-        paths = self.relabel_rewards(paths, mutate = True)
+        paths = self.path_relabel_rewards(paths, mutate = True)
 
         # collect more rollouts with the same policy, to be saved as videos in tensorboard
         # note: here, we collect MAX_NVIDEO rollouts, each of length MAX_VIDEO_LEN
@@ -260,7 +265,7 @@ class RL_Trainer(object):
         if self.logvideo:
             # print('\nCollecting train rollouts to be used for saving videos...')
             train_video_paths = utils.sample_n_trajectories(self.env, collect_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
-            train_video_paths = self.relabel_rewards(train_video_paths, mutate = True)
+            train_video_paths = self.path_relabel_rewards(train_video_paths, mutate = True)
 
         return paths, envsteps_this_batch, train_video_paths
 
@@ -290,13 +295,13 @@ class RL_Trainer(object):
         # collect eval trajectories, for logging
         print("\nCollecting data for eval...")
         eval_paths, eval_envsteps_this_batch = utils.eval_trajectories(self.env, eval_policy, self.params['eval_batch_size'], self.params['ep_len'])
-        eval_paths = self.relabel_rewards(eval_paths, mutate = True)
+        eval_paths = self.path_relabel_rewards(eval_paths, mutate = True)
 
         # save eval rollouts as videos in tensorboard event file
         if self.logvideo and train_video_paths != None:
             print('\nCollecting video rollouts eval')
             eval_video_paths = utils.sample_n_trajectories(self.env, eval_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
-            eval_video_paths = self.relabel_rewards(eval_video_paths, mutate = True)
+            eval_video_paths = self.path_relabel_rewards(eval_video_paths, mutate = True)
 
             #save train/eval videos
             print('\nSaving train rollouts as videos...')
