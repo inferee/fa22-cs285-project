@@ -10,7 +10,7 @@ from cs285.infrastructure.rl_trainer import RL_Trainer
 class SAC_Trainer(object):
 
     def __init__(self, params):
-        assert params['env_name'] == 'Walker2d-v3'
+        assert params['env_name'] == 'Walker2d-v4'
         assert all([p in ['forward', 'backward', 'jump'] for p in params['env_tasks']])
         assert params['multitask_setting'] in ['none', 'all']
         #####################
