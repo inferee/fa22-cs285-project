@@ -1,5 +1,7 @@
 import os
 import time
+import copy
+import itertools
 
 from cs285.agents.sac_agent import SACAgent
 from cs285.infrastructure.rl_trainer import RL_Trainer
@@ -8,7 +10,9 @@ from cs285.infrastructure.rl_trainer import RL_Trainer
 class SAC_Trainer(object):
 
     def __init__(self, params):
-
+        assert params['env_name'] == 'Walker2d-v3'
+        assert all([p in ['forward', 'backward', 'jump'] for p in params['env_tasks']])
+        assert params['multitask_setting'] in ['none', 'all']
         #####################
         ## SET AGENT PARAMS
         #####################
@@ -43,21 +47,35 @@ class SAC_Trainer(object):
         ## RL TRAINER
         ################
 
-        self.rl_trainer = RL_Trainer(self.params)
+        self.rl_trainers = dict()
+        for env_task in params['env_tasks']:
+            trainer_params = copy.deepcopy(self.params)
+            trainer_params['env_task'] = env_task
+            self.rl_trainers[env_task] = RL_Trainer(trainer_params)
 
     def run_training_loop(self):
-        self.rl_trainer.run_sac_training_loop(
-            self.params['n_iter'],
-            collect_policy = self.rl_trainer.agent.actor,
-            eval_policy = self.rl_trainer.agent.actor,
-            )
+        for i in range(self.params['n_iter']):
+            data = []
+            for rl_trainer in self.rl_trainers:
+                data.append(rl_trainer.run_sac_training_loop(
+                    i, 
+                    collect_policy = self.rl_trainer.agent.actor,
+                    eval_policy = self.rl_trainer.agent.actor,
+                    ))
+
+            if self.params['multitask_setting'] == 'all':
+                for j, k in itertools.permutations(len(self.rl_trainers), 2):
+                    # TODO: NEED TO RELABEL REWARDS
+                    self.rl_trainers[j].agent.add_to_replay_buffer(data[k])
 
 
 def main():
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='CartPole-v0')
+    parser.add_argument('--env_name', type=str, default='Walker2d-v3')
+    parser.add_argument('--env_tasks', type=str, nargs='+', default='forward')
+    parser.add_argument('--multitask_setting', type=str, default='none')
     parser.add_argument('--ep_len', type=int, default=200)
     parser.add_argument('--exp_name', type=str, default='todo')
     parser.add_argument('--n_iter', '-n', type=int, default=200)
