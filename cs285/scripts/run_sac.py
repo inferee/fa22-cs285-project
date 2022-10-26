@@ -11,7 +11,7 @@ from tqdm import trange
 class SAC_Trainer(object):
 
     def __init__(self, params):
-        assert params['env_name'] == 'Walker2d-v4'
+        assert params['env_name'] == 'Walker2d-v4' or 'HalfCheetah-v4'
         assert all([p in ['forward', 'backward', 'jump'] for p in params['env_tasks']])
         assert params['multitask_setting'] in ['none', 'all']
         #####################

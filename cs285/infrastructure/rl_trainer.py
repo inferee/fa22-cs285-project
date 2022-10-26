@@ -52,7 +52,10 @@ class RL_Trainer(object):
 
         # Make the gym environment
         if self.params['agent_class'] is SACAgent:
-            self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'])
+            if self.params['env_name'] == 'Walker2d-v4':
+                self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'], healthy_z_range=(0.5, 10))
+            else:
+                self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'])
         else:
             self.env = gym.make(self.params['env_name'])
         if self.params['video_log_freq'] > 0:
@@ -121,7 +124,7 @@ class RL_Trainer(object):
 
     def relabel_rewards(self, obs, act, rew):
         if self.params['env_name'] == 'Walker2d-v4':
-            x_vel = obs[7]
+            x_vel = obs[8]
             ctrl_cost = 1e-3 * np.linalg.norm(act) ** 2
             z_pos = obs[0]
             healthy_reward = 1
@@ -130,7 +133,8 @@ class RL_Trainer(object):
             elif self.params['env_task'] == 'backward':
                 rew = healthy_reward - x_vel - ctrl_cost
             elif self.params['env_task'] == 'jump':
-                rew = healthy_reward + np.abs(x_vel) - ctrl_cost + 10 * (z_pos - 1.25)
+                rew = healthy_reward + x_vel - ctrl_cost + 15 * (z_pos - 1.25)
+            print(rew.shape)
         return rew
 
     def path_relabel_rewards(self, paths, mutate = False):
@@ -141,14 +145,21 @@ class RL_Trainer(object):
             reward_fn = {
                 'forward': lambda x_vel, ctrl_cost, _: healthy_reward + x_vel - ctrl_cost,
                 'backward': lambda x_vel, ctrl_cost, _: healthy_reward - x_vel - ctrl_cost,
-                'jump': lambda x_vel, ctrl_cost, z_pos: healthy_reward + np.abs(x_vel) - ctrl_cost + 10 * (z_pos[0] - 1.25)
+                'jump': lambda x_vel, ctrl_cost, z_pos: healthy_reward + x_vel - ctrl_cost + 15 * (z_pos - 1.25)
+            }[self.params['env_task']]
+        elif self.params['env_name'] == 'HalfCheetah-v4':
+            reward_fn = {
+                'forward': lambda x_vel, ctrl_cost, _: x_vel - ctrl_cost,
+                'backward': lambda x_vel, ctrl_cost, _: -x_vel - ctrl_cost,
+                'jump': lambda x_vel, ctrl_cost, z_pos: x_vel - ctrl_cost + 15 * z_pos
             }[self.params['env_task']]
 
-            for path in paths:
-                x_vel = path['observation'][:, 7]
-                ctrl_cost = 1e-3 * np.linalg.norm(path['action'], axis=1) ** 2
-                z_pos = path['observation'][:, 0]
-                path['reward'] = reward_fn(x_vel, ctrl_cost, z_pos)
+        for path in paths:
+            x_vel = path['observation'][:, 8]
+            ctrl_cost = 1e-3 * np.linalg.norm(path['action'], axis=1) ** 2
+            z_pos = path['observation'][:, 0]
+            path['reward'] = reward_fn(x_vel, ctrl_cost, z_pos)
+            print(path['reward'].shape)
         return paths
 
     def run_sac_training_loop(self, collect_policy, eval_policy):
