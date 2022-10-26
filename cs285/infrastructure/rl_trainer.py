@@ -124,22 +124,24 @@ class RL_Trainer(object):
             x_vel = obs[7]
             ctrl_cost = 1e-3 * np.linalg.norm(act) ** 2
             z_pos = obs[0]
+            healthy_reward = 1
             if self.params['env_task'] == 'forward':
-                rew = x_vel - ctrl_cost
+                rew = healthy_reward + x_vel - ctrl_cost
             elif self.params['env_task'] == 'backward':
-                rew = -x_vel - ctrl_cost
+                rew = healthy_reward - x_vel - ctrl_cost
             elif self.params['env_task'] == 'jump':
-                rew = np.abs(x_vel) - ctrl_cost + 10 * (z_pos - 1.25)
+                rew = healthy_reward + np.abs(x_vel) - ctrl_cost + 10 * (z_pos - 1.25)
         return rew
 
     def path_relabel_rewards(self, paths, mutate = False):
         if not mutate:
             paths = copy.deepcopy(paths)
         if self.params['env_name'] == 'Walker2d-v4':
+            healthy_reward = 1
             reward_fn = {
-                'forward': lambda x_vel, ctrl_cost, _: x_vel - ctrl_cost,
-                'backward': lambda x_vel, ctrl_cost, _: -x_vel - ctrl_cost,
-                'jump': lambda x_vel, ctrl_cost, z_pos: np.abs(x_vel) - ctrl_cost + 10 * (z_pos[0] - 1.25)
+                'forward': lambda x_vel, ctrl_cost, _: healthy_reward + x_vel - ctrl_cost,
+                'backward': lambda x_vel, ctrl_cost, _: healthy_reward - x_vel - ctrl_cost,
+                'jump': lambda x_vel, ctrl_cost, z_pos: healthy_reward + np.abs(x_vel) - ctrl_cost + 10 * (z_pos[0] - 1.25)
             }[self.params['env_task']]
 
             for path in paths:
