@@ -134,7 +134,6 @@ class RL_Trainer(object):
                 rew = healthy_reward - x_vel - ctrl_cost
             elif self.params['env_task'] == 'jump':
                 rew = healthy_reward + x_vel - ctrl_cost + 15 * (z_pos - 1.25)
-            print(rew.shape)
         return rew
 
     def path_relabel_rewards(self, paths, mutate = False):
@@ -159,7 +158,6 @@ class RL_Trainer(object):
             ctrl_cost = 1e-3 * np.linalg.norm(path['action'], axis=1) ** 2
             z_pos = path['observation'][:, 0]
             path['reward'] = reward_fn(x_vel, ctrl_cost, z_pos)
-            print(path['reward'].shape)
         return paths
 
     def run_sac_training_loop(self, collect_policy, eval_policy):
