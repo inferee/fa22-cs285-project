@@ -66,7 +66,8 @@ class SAC_Trainer(object):
             if self.params['multitask_setting'] == 'all':
                 for j, k in itertools.permutations(len(self.rl_trainers), 2):
                     # TODO: NEED TO RELABEL REWARDS
-                    self.rl_trainers[j].agent.add_to_replay_buffer(data[k])
+                    relabeled_data = self.rl_trainers[j].relabel_rewards(data[k])
+                    self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
 
 
 def main():

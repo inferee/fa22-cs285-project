@@ -3,6 +3,7 @@ import pickle
 import os
 import sys
 import time
+import copy
 from tqdm import trange
 from cs285.infrastructure.atari_wrappers import ReturnWrapper
 
@@ -51,7 +52,7 @@ class RL_Trainer(object):
 
         # Make the gym environment
         if self.params['agent_class'] is SACAgent:
-            self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'])
+            self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'], **extra_env_params)
         else:
             self.env = gym.make(self.params['env_name'])
         if self.params['video_log_freq'] > 0:
@@ -118,6 +119,20 @@ class RL_Trainer(object):
     ####################################
     ####################################
 
+    def relabel_rewards(self, paths, mutate = False):
+        if not mutate:
+            paths = copy.deepcopy(paths)
+        if self.params['env_name'] == 'Walker2d-v3':
+            x_vel = paths['observation'][:,7]
+            ctrl_cost = 1e-3 * np.linalg.norm(paths['action'], axis=1) ** 2
+            if self.params['env_task'] == 'forward':
+                paths['reward'] = x_vel - ctrl_cost
+            elif self.params['env_task'] == 'backward':
+                paths['reward'] = -x_vel - ctrl_cost
+            elif self.params['env_task'] == 'jump':
+                paths['reward'] = np.abs(x_vel) - ctrl_cost + 10 * (paths['observation'][:,0] - 1.25)
+        return paths
+
     def run_sac_training_iter(self, itr, collect_policy, eval_policy):
         """
         :param itr:  number of (dagger) iterations
@@ -157,6 +172,7 @@ class RL_Trainer(object):
             use_batchsize = self.params['batch_size_initial']
             print("\nSampling seed steps for training...")
             paths, envsteps_this_batch = utils.sample_random_trajectories(self.env, use_batchsize, self.params['ep_len'])
+            paths = self.relabel_rewards(paths, mutate = True)
             train_video_paths = None
             episode_stats['reward'].append(np.mean([np.sum(path['reward']) for path in paths]))
             episode_stats['ep_len'].append(len(paths[0]['reward']))
@@ -223,6 +239,7 @@ class RL_Trainer(object):
         # collect `batch_size` samples to be used for training
         # print("\nCollecting data to be used for training...")
         paths, envsteps_this_batch = utils.sample_trajectories(self.env, collect_policy, num_transitions_to_sample, self.params['ep_len'])
+        paths = self.relabel_rewards(paths, mutate = True)
 
         # collect more rollouts with the same policy, to be saved as videos in tensorboard
         # note: here, we collect MAX_NVIDEO rollouts, each of length MAX_VIDEO_LEN
@@ -230,6 +247,7 @@ class RL_Trainer(object):
         if self.logvideo:
             # print('\nCollecting train rollouts to be used for saving videos...')
             train_video_paths = utils.sample_n_trajectories(self.env, collect_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
+            train_video_paths = self.relabel_rewards(train_video_paths, mutate = True)
 
         return paths, envsteps_this_batch, train_video_paths
 
@@ -259,11 +277,13 @@ class RL_Trainer(object):
         # collect eval trajectories, for logging
         print("\nCollecting data for eval...")
         eval_paths, eval_envsteps_this_batch = utils.eval_trajectories(self.env, eval_policy, self.params['eval_batch_size'], self.params['ep_len'])
+        eval_paths = self.relabel_rewards(eval_paths, mutate = True)
 
         # save eval rollouts as videos in tensorboard event file
         if self.logvideo and train_video_paths != None:
             print('\nCollecting video rollouts eval')
             eval_video_paths = utils.sample_n_trajectories(self.env, eval_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
+            eval_video_paths = self.relabel_rewards(eval_video_paths, mutate = True)
 
             #save train/eval videos
             print('\nSaving train rollouts as videos...')
