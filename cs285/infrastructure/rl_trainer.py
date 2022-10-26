@@ -120,15 +120,16 @@ class RL_Trainer(object):
     ####################################
 
     def relabel_rewards(self, obs, act, rew):
-        if self.params['env_name'] == 'Walker2d-v3':
+        if self.params['env_name'] == 'Walker2d-v4':
             x_vel = obs[7]
             ctrl_cost = 1e-3 * np.linalg.norm(act) ** 2
+            z_pos = obs[0]
             if self.params['env_task'] == 'forward':
                 rew = x_vel - ctrl_cost
             elif self.params['env_task'] == 'backward':
                 rew = -x_vel - ctrl_cost
             elif self.params['env_task'] == 'jump':
-                rew = np.abs(x_vel) - ctrl_cost + 10 * (obs[0] - 1.25)
+                rew = np.abs(x_vel) - ctrl_cost + 10 * (z_pos - 1.25)
         return rew
 
     def path_relabel_rewards(self, paths, mutate = False):
@@ -206,7 +207,8 @@ class RL_Trainer(object):
                 action = self.agent.actor.get_action(obs)[0]
                 next_obs, rew, done, _ = self.env.step(action)
 
-                episode_return += self.relabel_rewards(obs, action, rew)
+                rew = self.relabel_rewards(next_obs, action, rew)
+                episode_return += rew
 
                 episode_step += 1
                 self.total_envsteps += 1
