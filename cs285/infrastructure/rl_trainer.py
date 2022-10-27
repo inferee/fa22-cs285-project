@@ -134,6 +134,16 @@ class RL_Trainer(object):
                 rew = healthy_reward - x_vel - ctrl_cost
             elif self.params['env_task'] == 'jump':
                 rew = healthy_reward + x_vel - ctrl_cost + 15 * (z_pos - 1.25)
+        elif self.params['env_name'] == 'HalfCheetah-v4':
+            x_vel = obs[8]
+            ctrl_cost = 1e-3 * np.linalg.norm(act) ** 2
+            z_pos = obs[0]
+            if self.params['env_task'] == 'forward':
+                rew = x_vel - ctrl_cost
+            elif self.params['env_task'] == 'backward':
+                rew = -x_vel - ctrl_cost
+            elif self.params['env_task'] == 'jump':
+                rew = x_vel - ctrl_cost + 15 * (z_pos - 1.25)
         return rew
 
     def path_relabel_rewards(self, paths, mutate = False):
