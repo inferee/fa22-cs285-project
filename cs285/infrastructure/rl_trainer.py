@@ -143,7 +143,7 @@ class RL_Trainer(object):
             elif self.params['env_task'] == 'backward':
                 rew = -x_vel - ctrl_cost
             elif self.params['env_task'] == 'jump':
-                rew = x_vel - ctrl_cost + 15 * (z_pos - 1.25)
+                rew = x_vel - ctrl_cost + 15 * z_pos
         return rew
 
     def path_relabel_rewards(self, paths, mutate = False):
