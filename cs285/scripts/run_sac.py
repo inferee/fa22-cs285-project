@@ -13,7 +13,7 @@ class SAC_Trainer(object):
     def __init__(self, params):
         assert params['env_name'] == 'Walker2d-v4' or 'HalfCheetah-v4'
         assert all([p in ['forward', 'backward', 'jump'] for p in params['env_tasks']])
-        assert params['multitask_setting'] in ['none', 'all']
+        assert params['multitask_setting'] in ['none', 'all', 'cds']
         #####################
         ## SET AGENT PARAMS
         #####################
@@ -37,7 +37,12 @@ class SAC_Trainer(object):
             'num_actor_updates_per_agent_update': params['num_actor_updates_per_agent_update'],
         }
 
-        agent_params = {**computation_graph_args, **estimate_advantage_args, **train_args}
+        cql_args = {
+            'cds_percentile': params['cds_percentile'],
+            'cds_gamma': params['cds_gamma'],
+        }
+
+        agent_params = {**computation_graph_args, **estimate_advantage_args, **train_args, **cql_args}
 
         self.params = params
         self.params['agent_class'] = SACAgent
@@ -70,10 +75,13 @@ class SAC_Trainer(object):
         for i in trange(self.params['n_iter']):
             data = {env_task: next(loop) for env_task, loop in training_loops.items()}
 
-            if self.params['multitask_setting'] == 'all':
+            if self.params['multitask_setting'] != 'none':
                 for j, k in itertools.permutations(self.rl_trainers.keys(), 2):
                     relabeled_data = self.rl_trainers[j].path_relabel_rewards(data[k])
-                    self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
+                    if self.params['multitask_setting'] == 'all':
+                        self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
+                    elif self.params['multitask_setting'] == 'cds':
+                        self.rl_trainers[j].agent.add_conservative(relabeled_data)
 
 
 def main():
@@ -101,6 +109,8 @@ def main():
     parser.add_argument('--learning_rate', '-lr', type=float, default=3e-4)
     parser.add_argument('--n_layers', '-l', type=int, default=2)
     parser.add_argument('--size', '-s', type=int, default=64)
+    parser.add_argument('--cds_percentile', type=float, default=.5)
+    parser.add_argument('--cds_gamma', type=float, default=0.99)
 
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_gpu', '-ngpu', action='store_true')

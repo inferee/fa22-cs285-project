@@ -249,6 +249,11 @@ class RL_Trainer(object):
             #     print("\nTraining agent...")
             all_logs = self.train_agent()
 
+            if self.params['multitask_setting'] == 'cds':
+                # if using CDS, update the data sharing threshold
+                ob_batch, ac_batch, _, _, _ = self.agent.sample(self.params['eval_batch_size'])
+                self.agent.update_cds_threshold(ob_batch, ac_batch)
+
             # log/save
             if self.logvideo or self.logmetrics:
                 # perform logging

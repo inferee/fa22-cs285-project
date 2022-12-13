@@ -27,6 +27,10 @@ class SACAgent(BaseAgent):
         self.critic_tau = 0.005
         self.learning_rate = self.agent_params['learning_rate']
 
+        self.cds_percentile = self.agent_params['cds_percentile']
+        self.cds_gamma = self.agent_params['cds_gamma']
+        self.cds_threshold = None
+
         self.actor = MLPPolicySAC(
             self.agent_params['ac_dim'],
             self.agent_params['ob_dim'],
@@ -102,8 +106,44 @@ class SACAgent(BaseAgent):
 
         return loss
 
+    def update_cds_threshold(self, ob_no, ac_na):
+        """Update the data sharing percentile with an exponentially moving average"""
+        ob_no = ptu.from_numpy(ob_no)
+        ac_na = ptu.from_numpy(ac_na)
+
+        with torch.no_grad():
+            q1, q2 = self.critic(ob_no, ac_na)
+            q = torch.min(q1, q2)
+            k = max(int(self.cds_percentile * len(q)), 1)
+            threshold = torch.kthvalue(q, k).values
+            if self.cds_threshold is None:
+                self.cds_threshold = threshold
+            else:
+                self.cds_threshold = self.cds_gamma * self.cds_threshold + (1 - self.cds_gamma) * threshold
+
     def add_to_replay_buffer(self, paths):
         self.replay_buffer.add_rollouts(paths)
+
+    def add_conservative(self, paths):
+        observations, actions, next_observations, terminals, concatenated_rews, _ = convert_listofrollouts(paths)
+        with torch.no_grad():
+            q1, q2 = self.critic(ptu.from_numpy(observations), ptu.from_numpy(actions))
+            q = torch.min(q1, q2)
+            share_locs = q < self.cds_threshold
+            if not share_locs.any():
+                return
+        
+        share_locs = ptu.to_numpy(share_locs)
+        if share_locs.ndim == 0:
+            share_locs = np.array([share_locs])
+
+        observations = observations[share_locs]
+        actions = actions[share_locs]
+        next_observations = next_observations[share_locs]
+        terminals = terminals[share_locs]
+        concatenated_rews = concatenated_rews[share_locs]
+
+        self.replay_buffer.add_transitions(observations, actions, next_observations, terminals, concatenated_rews)
 
     def sample(self, batch_size):
         return self.replay_buffer.sample_random_data(batch_size)

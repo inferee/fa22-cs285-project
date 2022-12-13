@@ -20,8 +20,10 @@ class ReplayBuffer(object):
             self.paths.append(path)
 
         # convert new rollouts into their component arrays, and append them onto our arrays
-        observations, actions, next_observations, terminals, concatenated_rews, unconcatenated_rews = convert_listofrollouts(paths)
+        observations, actions, next_observations, terminals, concatenated_rews, _ = convert_listofrollouts(paths)
+        self.add_transitions(observations, actions, next_observations, terminals, concatenated_rews, noised=noised)
 
+    def add_transitions(self, observations, actions, next_observations, terminals, concatenated_rews, noised=False):
         if noised:
             observations = add_noise(observations)
             next_observations = add_noise(next_observations)
