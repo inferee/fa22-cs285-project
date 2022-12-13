@@ -1,14 +1,19 @@
 import os
 import time
+import copy
+import itertools
 
 from cs285.agents.sac_agent import SACAgent
 from cs285.infrastructure.rl_trainer import RL_Trainer
 
+from tqdm import trange
 
 class SAC_Trainer(object):
 
     def __init__(self, params):
-
+        assert params['env_name'] == 'Walker2d-v4' or 'HalfCheetah-v4'
+        assert all([p in ['forward', 'backward', 'jump'] for p in params['env_tasks']])
+        assert params['multitask_setting'] in ['none', 'all']
         #####################
         ## SET AGENT PARAMS
         #####################
@@ -43,21 +48,41 @@ class SAC_Trainer(object):
         ## RL TRAINER
         ################
 
-        self.rl_trainer = RL_Trainer(self.params)
+        self.rl_trainers = dict()
+        for env_task in params['env_tasks']:
+            trainer_params = copy.deepcopy(self.params)
+            trainer_params['env_task'] = env_task
+            logdir = self.params['exp_name'] + '_' + self.params['env_name'] + '_' + env_task + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+            logdir = os.path.join(self.params['data_path'], logdir)
+            if not(os.path.exists(logdir)):
+                os.makedirs(logdir)
+            trainer_params['logdir'] = logdir
+            self.rl_trainers[env_task] = RL_Trainer(trainer_params)
 
     def run_training_loop(self):
-        self.rl_trainer.run_sac_training_loop(
-            self.params['n_iter'],
-            collect_policy = self.rl_trainer.agent.actor,
-            eval_policy = self.rl_trainer.agent.actor,
-            )
+        training_loops = {
+            env_task: rl_trainer.run_sac_training_loop(
+                collect_policy = rl_trainer.agent.actor,
+                eval_policy = rl_trainer.agent.actor,
+            ) for env_task, rl_trainer in self.rl_trainers.items()
+        }
+
+        for i in trange(self.params['n_iter']):
+            data = {env_task: next(loop) for env_task, loop in training_loops.items()}
+
+            if self.params['multitask_setting'] == 'all':
+                for j, k in itertools.permutations(self.rl_trainers.keys(), 2):
+                    relabeled_data = self.rl_trainers[j].path_relabel_rewards(data[k])
+                    self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
 
 
 def main():
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='CartPole-v0')
+    parser.add_argument('--env_name', type=str, default='Walker2d-v4')
+    parser.add_argument('--env_tasks', type=str, nargs='+', default='forward')
+    parser.add_argument('--multitask_setting', type=str, default='none')
     parser.add_argument('--ep_len', type=int, default=200)
     parser.add_argument('--exp_name', type=str, default='todo')
     parser.add_argument('--n_iter', '-n', type=int, default=200)
@@ -95,17 +120,9 @@ def main():
     ##################################
 
     data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../data')
-
+    params['data_path'] = data_path
     if not (os.path.exists(data_path)):
         os.makedirs(data_path)
-
-    logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
-    logdir = os.path.join(data_path, logdir)
-    params['logdir'] = logdir
-    if not(os.path.exists(logdir)):
-        os.makedirs(logdir)
-
-    print("\n\n\nLOGGING TO: ", logdir, "\n\n\n")
 
     ###################
     ### RUN TRAINING

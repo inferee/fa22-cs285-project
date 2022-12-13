@@ -80,7 +80,7 @@ class MLPPolicySAC(MLPPolicy):
         actor_loss.backward()
         self.optimizer.step()
 
-        alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
+        alpha_loss = -(torch.exp(self.log_alpha) * (log_prob + self.target_entropy).detach()).mean()
         self.log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         self.log_alpha_optimizer.step()

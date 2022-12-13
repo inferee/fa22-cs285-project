@@ -1,9 +1,10 @@
 from collections import OrderedDict
+from multiprocessing import active_children
 import pickle
 import os
 import sys
 import time
-from tqdm import trange
+import copy
 from cs285.infrastructure.atari_wrappers import ReturnWrapper
 
 import gym
@@ -51,7 +52,10 @@ class RL_Trainer(object):
 
         # Make the gym environment
         if self.params['agent_class'] is SACAgent:
-            self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'])
+            if self.params['env_name'] == 'Walker2d-v4':
+                self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'], healthy_z_range=(0.5, 10))
+            else:
+                self.env = gym.make(self.params['env_name'], max_episode_steps=self.params['ep_len'])
         else:
             self.env = gym.make(self.params['env_name'])
         if self.params['video_log_freq'] > 0:
@@ -115,90 +119,58 @@ class RL_Trainer(object):
         agent_class = self.params['agent_class']
         self.agent = agent_class(self.env, self.params['agent_params'])
 
-    def run_training_loop(self, n_iter, collect_policy, eval_policy,
-                          initial_expertdata=None, relabel_with_expert=False,
-                          start_relabel_with_expert=1, expert_policy=None):
-        """
-        :param n_iter:  number of (dagger) iterations
-        :param collect_policy:
-        :param eval_policy:
-        :param initial_expertdata:
-        :param relabel_with_expert:  whether to perform dagger
-        :param start_relabel_with_expert: iteration at which to start relabel with expert
-        :param expert_policy:
-        """
-
-        # init vars at beginning of training
-        self.total_envsteps = 0
-        self.start_time = time.time()
-
-        print_period = 1000 if isinstance(self.agent, DQNAgent) else 1
-
-        for itr in trange(n_iter):
-            # if itr % print_period == 0:
-            #     print("\n\n********** Iteration %i ************"%itr)
-
-            # decide if videos should be rendered/logged at this iteration
-            if itr % self.params['video_log_freq'] == 0 and self.params['video_log_freq'] != -1:
-                self.logvideo = True
-            else:
-                self.logvideo = False
-
-            # decide if metrics should be logged
-            if self.params['scalar_log_freq'] == -1:
-                self.logmetrics = False
-            elif itr % self.params['scalar_log_freq'] == 0:
-                self.logmetrics = True
-            else:
-                self.logmetrics = False
-
-            # collect trajectories, to be used for training
-            if isinstance(self.agent, DQNAgent):
-                # only perform an env step and add to replay buffer for DQN
-                self.agent.step_env()
-                envsteps_this_batch = 1
-                train_video_paths = None
-                paths = None
-            else:
-                use_batchsize = self.params['batch_size']
-                if itr==0:
-                    use_batchsize = self.params['batch_size_initial']
-                paths, envsteps_this_batch, train_video_paths = (
-                    self.collect_training_trajectories(
-                        itr, initial_expertdata, collect_policy, use_batchsize)
-                )
-
-            self.total_envsteps += envsteps_this_batch
-
-            # relabel the collected obs with actions from a provided expert policy
-            if relabel_with_expert and itr>=start_relabel_with_expert:
-                paths = self.do_relabel_with_expert(expert_policy, paths)
-
-            # add collected data to replay buffer
-            self.agent.add_to_replay_buffer(paths)
-
-            # train agent (using sampled data from replay buffer)
-            # if itr % print_period == 0:
-            #     print("\nTraining agent...")
-            all_logs = self.train_agent()
-
-            # log/save
-            if self.logvideo or self.logmetrics:
-                # perform logging
-                print('\nBeginning logging procedure...')
-                if isinstance(self.agent, DQNAgent):
-                    self.perform_dqn_logging(all_logs)
-                else:
-                    self.perform_logging(itr, paths, eval_policy, train_video_paths, all_logs)
-
-                if self.params['save_params']:
-                    self.agent.save('{}/agent_itr_{}.pt'.format(self.params['logdir'], itr))
-
-
     ####################################
     ####################################
 
-    def run_sac_training_loop(self, n_iter, collect_policy, eval_policy):
+    def relabel_rewards(self, obs, act, rew):
+        if self.params['env_name'] == 'Walker2d-v4':
+            x_vel = obs[8]
+            ctrl_cost = 1e-3 * np.linalg.norm(act) ** 2
+            z_pos = obs[0]
+            healthy_reward = 1
+            if self.params['env_task'] == 'forward':
+                rew = healthy_reward + x_vel - ctrl_cost
+            elif self.params['env_task'] == 'backward':
+                rew = healthy_reward - x_vel - ctrl_cost
+            elif self.params['env_task'] == 'jump':
+                rew = healthy_reward + x_vel - ctrl_cost + 15 * (z_pos - 1.25)
+        elif self.params['env_name'] == 'HalfCheetah-v4':
+            x_vel = obs[8]
+            ctrl_cost = 1e-3 * np.linalg.norm(act) ** 2
+            z_pos = obs[0]
+            if self.params['env_task'] == 'forward':
+                rew = x_vel - ctrl_cost
+            elif self.params['env_task'] == 'backward':
+                rew = -x_vel - ctrl_cost
+            elif self.params['env_task'] == 'jump':
+                rew = x_vel - ctrl_cost + 15 * z_pos
+        return rew
+
+    def path_relabel_rewards(self, paths, mutate = False):
+        if not mutate:
+            paths = copy.deepcopy(paths)
+        if self.params['env_name'] == 'Walker2d-v4':
+            healthy_reward = 1
+            reward_fn = {
+                'forward': lambda x_vel, ctrl_cost, _: healthy_reward + x_vel - ctrl_cost,
+                'backward': lambda x_vel, ctrl_cost, _: healthy_reward - x_vel - ctrl_cost,
+                'jump': lambda x_vel, ctrl_cost, z_pos: healthy_reward + x_vel - ctrl_cost + 15 * (z_pos - 1.25)
+            }[self.params['env_task']]
+        elif self.params['env_name'] == 'HalfCheetah-v4':
+            reward_fn = {
+                'forward': lambda x_vel, ctrl_cost, _: x_vel - ctrl_cost,
+                'backward': lambda x_vel, ctrl_cost, _: -x_vel - ctrl_cost,
+                'jump': lambda x_vel, ctrl_cost, z_pos: x_vel - ctrl_cost + 15 * z_pos
+            }[self.params['env_task']]
+
+        for path in paths:
+            x_vel = path['observation'][:, 8]
+            ctrl_cost = 1e-3 * np.linalg.norm(path['action'], axis=1) ** 2
+            z_pos = path['observation'][:, 0]
+            path['reward'] = reward_fn(x_vel, ctrl_cost, z_pos)
+        return paths
+
+    def run_sac_training_loop(self, collect_policy, eval_policy):
         """
         :param n_iter:  number of (dagger) iterations
         :param collect_policy:
@@ -215,7 +187,9 @@ class RL_Trainer(object):
         done = False
         print_period = 1000
 
-        for itr in trange(n_iter):
+        itr = 0
+
+        while True:
             # if itr % print_period == 0:
             #     print("\n\n********** Iteration %i ************"%itr)
 
@@ -238,6 +212,7 @@ class RL_Trainer(object):
                 use_batchsize = self.params['batch_size_initial']
                 print("\nSampling seed steps for training...")
                 paths, envsteps_this_batch = utils.sample_random_trajectories(self.env, use_batchsize, self.params['ep_len'])
+                paths = self.path_relabel_rewards(paths, mutate = True)
                 train_video_paths = None
                 episode_stats['reward'].append(np.mean([np.sum(path['reward']) for path in paths]))
                 episode_stats['ep_len'].append(len(paths[0]['reward']))
@@ -253,6 +228,7 @@ class RL_Trainer(object):
                 action = self.agent.actor.get_action(obs)[0]
                 next_obs, rew, done, _ = self.env.step(action)
 
+                rew = self.relabel_rewards(next_obs, action, rew)
                 episode_return += rew
 
                 episode_step += 1
@@ -282,6 +258,8 @@ class RL_Trainer(object):
                 if self.params['save_params']:
                     self.agent.save('{}/agent_itr_{}.pt'.format(self.params['logdir'], itr))
 
+            yield paths
+            itr += 1
 
     ####################################
     ####################################
@@ -302,6 +280,7 @@ class RL_Trainer(object):
         # collect `batch_size` samples to be used for training
         # print("\nCollecting data to be used for training...")
         paths, envsteps_this_batch = utils.sample_trajectories(self.env, collect_policy, num_transitions_to_sample, self.params['ep_len'])
+        paths = self.path_relabel_rewards(paths, mutate = True)
 
         # collect more rollouts with the same policy, to be saved as videos in tensorboard
         # note: here, we collect MAX_NVIDEO rollouts, each of length MAX_VIDEO_LEN
@@ -309,6 +288,7 @@ class RL_Trainer(object):
         if self.logvideo:
             # print('\nCollecting train rollouts to be used for saving videos...')
             train_video_paths = utils.sample_n_trajectories(self.env, collect_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
+            train_video_paths = self.path_relabel_rewards(train_video_paths, mutate = True)
 
         return paths, envsteps_this_batch, train_video_paths
 
@@ -327,111 +307,9 @@ class RL_Trainer(object):
 
     ####################################
     ####################################
-    def perform_dqn_logging(self, all_logs):
-        last_log = all_logs[-1]
-
-        episode_rewards = self.env.get_episode_rewards()
-        if len(episode_rewards) > 0:
-            self.mean_episode_reward = np.mean(episode_rewards[-100:])
-        if len(episode_rewards) > 100:
-            self.best_mean_episode_reward = max(self.best_mean_episode_reward, self.mean_episode_reward)
-
-        logs = OrderedDict()
-
-        logs["Train_EnvstepsSoFar"] = self.agent.t
-        print("Timestep %d" % (self.agent.t,))
-        if self.mean_episode_reward > -5000:
-            logs["Train_AverageReturn"] = np.mean(self.mean_episode_reward)
-        print("mean reward (100 episodes) %f" % self.mean_episode_reward)
-        if self.best_mean_episode_reward > -5000:
-            logs["Train_BestReturn"] = np.mean(self.best_mean_episode_reward)
-        print("best mean reward %f" % self.best_mean_episode_reward)
-
-        if self.start_time is not None:
-            time_since_start = (time.time() - self.start_time)
-            print("running time %f" % time_since_start)
-            logs["TimeSinceStart"] = time_since_start
-
-        logs.update(last_log)
-
-        sys.stdout.flush()
-
-        for key, value in logs.items():
-            print('{} : {}'.format(key, value))
-            self.logger.log_scalar(value, key, self.agent.t)
-        print('Done logging...\n\n')
-
-        self.logger.flush()
-
-    def perform_logging(self, itr, paths, eval_policy, train_video_paths, all_logs):
-
-        last_log = all_logs[-1]
-
-        #######################
-
-        # collect eval trajectories, for logging
-        print("\nCollecting data for eval...")
-        eval_paths, eval_envsteps_this_batch = utils.sample_trajectories(self.env, eval_policy, self.params['eval_batch_size'], self.params['ep_len'])
-
-        # save eval rollouts as videos in tensorboard event file
-        if self.logvideo and train_video_paths != None:
-            print('\nCollecting video rollouts eval')
-            eval_video_paths = utils.sample_n_trajectories(self.env, eval_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
-
-            #save train/eval videos
-            print('\nSaving train rollouts as videos...')
-            self.logger.log_paths_as_videos(train_video_paths, itr, fps=self.fps, max_videos_to_save=MAX_NVIDEO,
-                                            video_title='train_rollouts')
-            self.logger.log_paths_as_videos(eval_video_paths, itr, fps=self.fps,max_videos_to_save=MAX_NVIDEO,
-                                             video_title='eval_rollouts')
-
-        #######################
-
-        # save eval metrics
-        if self.logmetrics:
-            # returns, for logging
-            train_returns = [path["reward"].sum() for path in paths]
-            eval_returns = [eval_path["reward"].sum() for eval_path in eval_paths]
-
-            # episode lengths, for logging
-            train_ep_lens = [len(path["reward"]) for path in paths]
-            eval_ep_lens = [len(eval_path["reward"]) for eval_path in eval_paths]
-
-            # decide what to log
-            logs = OrderedDict()
-            logs["Eval_AverageReturn"] = np.mean(eval_returns)
-            logs["Eval_StdReturn"] = np.std(eval_returns)
-            logs["Eval_MaxReturn"] = np.max(eval_returns)
-            logs["Eval_MinReturn"] = np.min(eval_returns)
-            logs["Eval_AverageEpLen"] = np.mean(eval_ep_lens)
-
-            logs["Train_AverageReturn"] = np.mean(train_returns)
-            logs["Train_StdReturn"] = np.std(train_returns)
-            logs["Train_MaxReturn"] = np.max(train_returns)
-            logs["Train_MinReturn"] = np.min(train_returns)
-            logs["Train_AverageEpLen"] = np.mean(train_ep_lens)
-
-            logs["Train_EnvstepsSoFar"] = self.total_envsteps
-            logs["TimeSinceStart"] = time.time() - self.start_time
-            logs.update(last_log)
-
-            if itr == 0:
-                self.initial_return = np.mean(train_returns)
-            logs["Initial_DataCollection_AverageReturn"] = self.initial_return
-
-            # perform the logging
-            for key, value in logs.items():
-                print('{} : {}'.format(key, value))
-                self.logger.log_scalar(value, key, itr)
-            print('Done logging...\n\n')
-
-            self.logger.flush()
-
-
-    ####################################
-    ####################################
 
     def perform_sac_logging(self, itr, stats, eval_policy, train_video_paths, all_logs):
+        print("Environment Task: {}".format(self.params['env_task']))
 
         last_log = all_logs[-1]
 
@@ -440,11 +318,13 @@ class RL_Trainer(object):
         # collect eval trajectories, for logging
         print("\nCollecting data for eval...")
         eval_paths, eval_envsteps_this_batch = utils.eval_trajectories(self.env, eval_policy, self.params['eval_batch_size'], self.params['ep_len'])
+        eval_paths = self.path_relabel_rewards(eval_paths, mutate = True)
 
         # save eval rollouts as videos in tensorboard event file
         if self.logvideo and train_video_paths != None:
             print('\nCollecting video rollouts eval')
             eval_video_paths = utils.sample_n_trajectories(self.env, eval_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
+            eval_video_paths = self.path_relabel_rewards(eval_video_paths, mutate = True)
 
             #save train/eval videos
             print('\nSaving train rollouts as videos...')
