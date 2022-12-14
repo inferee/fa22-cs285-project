@@ -11,7 +11,7 @@ python cs285/scripts/run_sac.py \
 --env_name Walker2d-v4 --env_tasks forward backward jump \
 --multitask_setting cds --cds_sharing_mode soft \
 --ep_len 1000 \
---discount 0.99 --scalar_log_freq 50 \
+--discount 0.99 --scalar_log_freq 2000 \
 -n 100000 -l 2 -s 256 -b 2000 -eb 2000 \
 -lr 0.0003 --init_temperature 0.1 --exp_name walker_fbj_cds_soft \
 --seed 1
@@ -20,7 +20,7 @@ python cs285/scripts/run_sac.py \
 --env_name Walker2d-v4 --env_tasks forward backward jump \
 --multitask_setting cds --cds_sharing_mode hard \
 --ep_len 1000 \
---discount 0.99 --scalar_log_freq 50 \
+--discount 0.99 --scalar_log_freq 2000 \
 -n 100000 -l 2 -s 256 -b 2000 -eb 2000 \
 -lr 0.0003 --init_temperature 0.1 --exp_name walker_fbj_cds_hard \
 --seed 1
