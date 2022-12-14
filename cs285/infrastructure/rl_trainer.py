@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import copy
+import pdb
 from cs285.infrastructure.atari_wrappers import ReturnWrapper
 
 import gym
@@ -252,7 +253,7 @@ class RL_Trainer(object):
             if self.params['multitask_setting'] == 'cds':
                 # if using CDS, update the data sharing threshold
                 ob_batch, ac_batch, _, _, _ = self.agent.sample(self.params['eval_batch_size'], orig_data_only = True)
-                self.agent.update_cds_threshold(ob_batch, ac_batch)
+                all_logs[-1]['CDS_Threshold'] = self.agent.update_cds_threshold(ob_batch, ac_batch)
 
             # log/save
             if self.logvideo or self.logmetrics:

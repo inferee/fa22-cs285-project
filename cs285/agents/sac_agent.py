@@ -146,6 +146,8 @@ class SACAgent(BaseAgent):
                 self.cds_threshold = self.cds_gamma * self.cds_threshold + (1 - self.cds_gamma) * threshold
             self.soft_cds_temp = self.cds_gamma * self.soft_cds_temp + (1 - self.cds_gamma) * torch.std(q).item()
 
+        return self.cds_threshold
+
     def add_to_replay_buffer(self, paths):
         self.replay_buffer.add_rollouts(paths)
 
