@@ -251,7 +251,7 @@ class RL_Trainer(object):
 
             if self.params['multitask_setting'] == 'cds':
                 # if using CDS, update the data sharing threshold
-                ob_batch, ac_batch, _, _, _ = self.agent.sample(self.params['eval_batch_size'])
+                ob_batch, ac_batch, _, _, _ = self.agent.sample(self.params['eval_batch_size'], orig_data_only = True)
                 self.agent.update_cds_threshold(ob_batch, ac_batch)
 
             # log/save
@@ -302,11 +302,12 @@ class RL_Trainer(object):
         # print('\nTraining agent using sampled data from replay buffer...')
         all_logs = []
         for _ in range(self.params['num_agent_train_steps_per_iter']):
+            using_soft_cds = self.params['multitask_setting'] == 'cds' and self.params['cds_sharing_mode'] == 'soft'
             # sample some data from the data buffer
-            ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch = self.agent.sample(self.params['train_batch_size'])
+            batch_info = self.agent.sample(self.params['train_batch_size'], get_is_original = using_soft_cds)
 
             # use the sampled data to train an agent
-            train_log = self.agent.train(ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch)
+            train_log = self.agent.train(*batch_info)
             all_logs.append(train_log)
         return all_logs
 

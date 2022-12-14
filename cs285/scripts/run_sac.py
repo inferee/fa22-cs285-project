@@ -81,7 +81,16 @@ class SAC_Trainer(object):
                     if self.params['multitask_setting'] == 'all':
                         self.rl_trainers[j].agent.add_to_replay_buffer(relabeled_data)
                     elif self.params['multitask_setting'] == 'cds':
-                        self.rl_trainers[j].agent.add_conservative(relabeled_data)
+                        if self.params['cds_sharing_mode'] == 'hard':
+                            self.rl_trainers[j].agent.add_conservative_hard(relabeled_data)
+                        elif self.params['cds_sharing_mode'] == 'soft':
+                            self.rl_trainers[j].agent.add_conservative_soft(relabeled_data)
+                        else:
+                            assert False, "Invalid CDS sharing method."
+                    elif self.params['multitask_setting'] == 'none':
+                        pass
+                    else:
+                        assert False, "Invalid multitask setting"
 
 
 def main():
@@ -109,6 +118,7 @@ def main():
     parser.add_argument('--learning_rate', '-lr', type=float, default=3e-4)
     parser.add_argument('--n_layers', '-l', type=int, default=2)
     parser.add_argument('--size', '-s', type=int, default=64)
+    parser.add_argument('--cds_sharing_mode', type=str, default=None)
     parser.add_argument('--cds_percentile', type=float, default=.5)
     parser.add_argument('--cds_gamma', type=float, default=0.99)
 
