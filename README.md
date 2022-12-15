@@ -8,24 +8,39 @@ Make sure to also run `pip install -e .` in this folder.
 ### Walker2d
 ```
 python cs285/scripts/run_sac.py \
---env_name Walker2d-v4 --env_tasks forward backward jump --multitask_setting none --ep_len 1000 \
+--env_name Walker2d-v4 --env_tasks forward backward jump \
+--multitask_setting cds --cds_sharing_mode soft \
+--ep_len 1000 \
 --discount 0.99 --scalar_log_freq 2000 \
 -n 100000 -l 2 -s 256 -b 2000 -eb 2000 \
--lr 0.0003 --init_temperature 0.1 --exp_name walker_fbj_none \
+-lr 0.0003 --init_temperature 0.1 --exp_name walker_fbj_cds_soft \
 --seed 1
 
 python cs285/scripts/run_sac.py \
---env_name Walker2d-v4 --env_tasks forward backward jump --multitask_setting all --ep_len 1000 \
+--env_name Walker2d-v4 --env_tasks forward backward jump \
+--multitask_setting cds --cds_sharing_mode hard \
+--ep_len 1000 \
 --discount 0.99 --scalar_log_freq 2000 \
 -n 100000 -l 2 -s 256 -b 2000 -eb 2000 \
--lr 0.0003 --init_temperature 0.1 --exp_name walker_fbj_all \
+-lr 0.0003 --init_temperature 0.1 --exp_name walker_fbj_cds_hard \
 --seed 1
 
 python cs285/scripts/run_sac.py \
---env_name Walker2d-v4 --env_tasks forward backward --multitask_setting all --ep_len 1000 \
+--env_name Walker2d-v4 --env_tasks forward backward \
+--multitask_setting cds --cds_sharing_mode soft \
+--ep_len 1000 \
 --discount 0.99 --scalar_log_freq 2000 \
 -n 100000 -l 2 -s 256 -b 2000 -eb 2000 \
--lr 0.0003 --init_temperature 0.1 --exp_name walker_fb_all \
+-lr 0.0003 --init_temperature 0.1 --exp_name walker_fb_cds_soft \
+--seed 1
+
+python cs285/scripts/run_sac.py \
+--env_name Walker2d-v4 --env_tasks forward backward \
+--multitask_setting cds --cds_sharing_mode soft \
+--ep_len 1000 \
+--discount 0.99 --scalar_log_freq 2000 \
+-n 100000 -l 2 -s 256 -b 2000 -eb 2000 \
+-lr 0.0003 --init_temperature 0.1 --exp_name walker_fb_cds_hard \
 --seed 1
 
 ```
@@ -34,24 +49,39 @@ python cs285/scripts/run_sac.py \
 ### HalfCheetah
 ```
 python cs285/scripts/run_sac.py \
---env_name HalfCheetah-v4 --env_tasks forward backward jump --multitask_setting none --ep_len 150 \
+--env_name HalfCheetah-v4 --env_tasks forward backward jump \
+--multitask_setting cds --cds_sharing_mode soft \
+--ep_len 150 \
 --discount 0.99 --scalar_log_freq 1500 \
 -n 100000 -l 2 -s 256 -b 1500 -eb 1500 \
--lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fbj_none \
+-lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fbj_cds_soft \
 --seed 1
 
 python cs285/scripts/run_sac.py \
---env_name HalfCheetah-v4 --env_tasks forward backward jump --multitask_setting all --ep_len 150 \
+--env_name HalfCheetah-v4 --env_tasks forward backward jump \
+--multitask_setting cds --cds_sharing_mode hard \
+--ep_len 150 \
 --discount 0.99 --scalar_log_freq 1500 \
 -n 100000 -l 2 -s 256 -b 1500 -eb 1500 \
--lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fbj_all \
+-lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fbj_cds_hard \
 --seed 1
 
 python cs285/scripts/run_sac.py \
---env_name HalfCheetah-v4 --env_tasks forward backward --multitask_setting all --ep_len 150 \
+--env_name HalfCheetah-v4 --env_tasks forward backward \
+--multitask_setting cds --cds_sharing_mode soft \
+--ep_len 150 \
 --discount 0.99 --scalar_log_freq 1500 \
 -n 100000 -l 2 -s 256 -b 1500 -eb 1500 \
--lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fb_all \
+-lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fb_cds_soft \
+--seed 1
+
+python cs285/scripts/run_sac.py \
+--env_name HalfCheetah-v4 --env_tasks forward backward \
+--multitask_setting cds --cds_sharing_mode hard \
+--ep_len 150 \
+--discount 0.99 --scalar_log_freq 1500 \
+-n 100000 -l 2 -s 256 -b 1500 -eb 1500 \
+-lr 0.0003 --init_temperature 0.1 --exp_name halfcheetah_fb_cds_hard \
 --seed 1
 
 ```
